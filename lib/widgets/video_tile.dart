@@ -40,7 +40,7 @@ class VideoThumb extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             FutureBuilder<Uint8List?>(
-              future: library.thumbnail(video, size: (width * 2).round()),
+              future: library.thumbnail(video, width: (width * 2).round()),
               builder: (context, snapshot) {
                 final bytes = snapshot.data;
                 if (bytes == null) {
