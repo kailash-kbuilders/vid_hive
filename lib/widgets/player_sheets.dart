@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:media_kit/media_kit.dart' show SubtitleTrack;
+import 'package:media_kit/media_kit.dart' show AudioTrack, SubtitleTrack;
 import 'package:provider/provider.dart';
 
 import '../services/player_service.dart';
@@ -290,6 +290,15 @@ Future<void> showSubtitleSheet(BuildContext context) {
               },
             );
           }),
+          ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+            leading: const Icon(Icons.timer_outlined, size: 20, color: AppColors.lime),
+            title: const Text('Caption delay', style: TextStyle(fontSize: 13.5)),
+            onTap: () {
+              Navigator.of(sheetContext).pop();
+              showSubtitleDelaySheet(context);
+            },
+          ),
           if (tracks.isEmpty)
             const Padding(
               padding: EdgeInsets.fromLTRB(24, 6, 24, 18),
@@ -362,3 +371,99 @@ Future<void> showQueueSheet(BuildContext context) {
 }
 
 String timeLabel(Duration value) => _clock(value);
+
+
+Future<void> showAudioSheet(BuildContext context) {
+  final player = context.read<PlayerService>();
+  final tracks = player.audioTracks;
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: AppColors.card,
+    builder: (sheetContext) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _handle(),
+          _title(sheetContext, 'Audio track',
+              subtitle: tracks.length > 1
+                  ? '${tracks.length} tracks mile — jo chahiye chuno'
+                  : 'Video me ek hi audio track hai'),
+          ...tracks.map((track) {
+            final label = track.title ?? track.language ?? 'Track ${track.id}';
+            return ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+              leading: const Icon(Icons.audiotrack_rounded, size: 20, color: AppColors.lime),
+              title: Text(label, style: const TextStyle(fontSize: 13.5)),
+              subtitle: track.language == null
+                  ? null
+                  : Text(track.language!,
+                      style: const TextStyle(fontSize: 11, color: AppColors.muted)),
+              onTap: () {
+                player.useAudioTrack(track);
+                Navigator.of(sheetContext).pop();
+              },
+            );
+          }),
+          if (tracks.isEmpty)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 6, 24, 18),
+              child: Text('Abhi koi track list nahi mili.',
+                  style: TextStyle(fontSize: 11.5, color: AppColors.muted)),
+            ),
+          const SizedBox(height: 10),
+        ],
+      ),
+    ),
+  );
+}
+
+Future<void> showSubtitleDelaySheet(BuildContext context) {
+  final player = context.read<PlayerService>();
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: AppColors.card,
+    builder: (sheetContext) => StatefulBuilder(
+      builder: (sheetContext, setSheetState) {
+        final delay = player.subtitleDelay;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _handle(),
+                _title(sheetContext, 'Caption delay',
+                    subtitle: 'Captions ko aage-peeche karo'),
+                Slider(
+                  value: delay.clamp(-10.0, 10.0),
+                  min: -10,
+                  max: 10,
+                  divisions: 80,
+                  onChanged: (value) {
+                    player.setSubtitleDelay(value);
+                    setSheetState(() {});
+                  },
+                ),
+                Center(
+                  child: Text('${delay >= 0 ? '+' : ''}${delay.toStringAsFixed(2)} s',
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                ),
+                Center(
+                  child: TextButton(
+                    onPressed: () {
+                      player.setSubtitleDelay(0);
+                      setSheetState(() {});
+                    },
+                    child: const Text('Reset', style: TextStyle(color: AppColors.lime)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}

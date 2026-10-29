@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/library_service.dart';
+import '../services/player_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/gradient_bg.dart';
+import 'player_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -50,6 +52,12 @@ class SettingsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 18),
             _Tile(
+              icon: Icons.link_rounded,
+              title: 'Open video link',
+              subtitle: 'Direct MP4 / stream URL chalao',
+              onTap: () => _openStream(context),
+            ),
+            _Tile(
               icon: Icons.folder_shared_rounded,
               title: 'All files access',
               subtitle: 'Storage se seedha videos padhne ke liye',
@@ -84,6 +92,59 @@ class SettingsScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _openStream(BuildContext context) async {
+    final player = context.read<PlayerService>();
+    final controller = TextEditingController();
+    final url = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.cardSoft,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        title: const Text('Video link', style: TextStyle(fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Direct video URL paste karo (mp4, m3u8, mkv...).',
+                style: TextStyle(fontSize: 12, color: AppColors.muted)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.url,
+              style: const TextStyle(fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'https://...',
+                hintStyle: const TextStyle(color: AppColors.muted, fontSize: 12.5),
+                filled: true,
+                fillColor: AppColors.card,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.muted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()),
+            child: const Text('Play', style: TextStyle(color: AppColors.lime)),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (url == null || url.isEmpty) return;
+    await player.openUrl(url);
+    if (!context.mounted) return;
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PlayerScreen()));
   }
 
   Widget _chip(BuildContext context, String label, VideoSort sort, LibraryService library) {

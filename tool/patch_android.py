@@ -21,6 +21,7 @@ PERMISSIONS = [
     '<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" '
     'android:maxSdkVersion="29" />',
     '<uses-permission android:name="android.permission.WAKE_LOCK" />',
+    '<uses-permission android:name="android.permission.INTERNET" />',
 ]
 
 MAIN_ACTIVITY = '''package {package}

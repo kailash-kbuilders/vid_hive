@@ -9,11 +9,18 @@ import '../widgets/gradient_bg.dart';
 import '../widgets/video_tile.dart';
 import 'player_screen.dart';
 
-class LibraryScreen extends StatelessWidget {
+class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key, this.folder, this.title});
 
   final String? folder;
   final String? title;
+
+  @override
+  State<LibraryScreen> createState() => _LibraryScreenState();
+}
+
+class _LibraryScreenState extends State<LibraryScreen> {
+  bool _grid = false;
 
   Future<void> _open(BuildContext context, List<VideoItem> videos, int index) async {
     if (videos.isEmpty) return;
@@ -25,7 +32,8 @@ class LibraryScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final library = context.watch<LibraryService>();
     final player = context.watch<PlayerService>();
-    final videos = folder == null ? library.videos : library.byFolder(folder!);
+    final videos =
+        widget.folder == null ? library.videos : library.byFolder(widget.folder!);
     final canPop = Navigator.of(context).canPop();
 
     return GradientBg(
@@ -45,7 +53,7 @@ class LibraryScreen extends StatelessWidget {
                     ),
                   Expanded(
                     child: Text(
-                      title ?? (folder ?? 'All videos'),
+                      widget.title ?? (widget.folder ?? 'All videos'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: 22),
@@ -53,6 +61,16 @@ class LibraryScreen extends StatelessWidget {
                   ),
                   Text('${videos.length} videos',
                       style: const TextStyle(fontSize: 11.5, color: AppColors.muted)),
+                  const SizedBox(width: 6),
+                  IconButton(
+                    onPressed: () => setState(() => _grid = !_grid),
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(
+                      _grid ? Icons.view_list_rounded : Icons.grid_view_rounded,
+                      size: 19,
+                      color: AppColors.muted,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -127,19 +145,64 @@ class LibraryScreen extends StatelessWidget {
                         ),
                       ),
                     )
-                  : ListView.builder(
-                      padding: const EdgeInsets.only(top: 8, bottom: 220),
-                      itemCount: videos.length,
-                      itemBuilder: (context, index) {
-                        final video = videos[index];
-                        return VideoTile(
-                          video: video,
-                          resume: player.resumePositionFor(video),
-                          onTap: () => _open(context, videos, index),
-                          onMore: () => showVideoMenu(context, video, videos),
-                        );
-                      },
-                    ),
+                  : _grid
+                      ? GridView.builder(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 220),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            mainAxisSpacing: 14,
+                            crossAxisSpacing: 14,
+                            childAspectRatio: 0.82,
+                          ),
+                          itemCount: videos.length,
+                          itemBuilder: (context, index) {
+                            final video = videos[index];
+                            return GestureDetector(
+                              onTap: () => _open(context, videos, index),
+                              onLongPress: () => showVideoMenu(context, video, videos),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: VideoThumb(
+                                      video: video,
+                                      width: double.infinity,
+                                      height: double.infinity,
+                                      radius: 18,
+                                      resume: player.resumePositionFor(video),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    video.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        fontSize: 12, fontWeight: FontWeight.w500),
+                                  ),
+                                  Text(
+                                    '${video.resolution} · ${video.durationLabel}',
+                                    style: const TextStyle(
+                                        fontSize: 10, color: AppColors.muted),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.only(top: 8, bottom: 220),
+                          itemCount: videos.length,
+                          itemBuilder: (context, index) {
+                            final video = videos[index];
+                            return VideoTile(
+                              video: video,
+                              resume: player.resumePositionFor(video),
+                              onTap: () => _open(context, videos, index),
+                              onMore: () => showVideoMenu(context, video, videos),
+                            );
+                          },
+                        ),
             ),
           ],
         ),

@@ -43,6 +43,10 @@ class PlayerService extends ChangeNotifier {
   double _gamma = 0;
   String? _subtitlePath;
   List<SubtitleTrack> _subtitleTracks = const [];
+  List<AudioTrack> _audioTracks = const [];
+  double _subtitleDelay = 0;
+  String _zoom = 'fit';
+  bool _hardwareDecoding = true;
   String? _error;
   Timer? _resumeTimer;
   SharedPreferences? _prefs;
@@ -65,6 +69,17 @@ class PlayerService extends ChangeNotifier {
   double get gamma => _gamma;
   String? get subtitlePath => _subtitlePath;
   List<SubtitleTrack> get subtitleTracks => _subtitleTracks;
+  List<AudioTrack> get audioTracks => _audioTracks;
+  double get subtitleDelay => _subtitleDelay;
+  String get zoom => _zoom;
+  bool get hardwareDecoding => _hardwareDecoding;
+
+  BoxFit get videoFit => switch (_zoom) {
+        'fill' => BoxFit.cover,
+        'stretch' => BoxFit.fill,
+        'crop' => BoxFit.cover,
+        _ => BoxFit.contain,
+      };
   String? get error => _error;
   bool get hasNext => _index + 1 < _queue.length;
   bool get hasPrevious => _index > 0;
@@ -99,6 +114,7 @@ class PlayerService extends ChangeNotifier {
     });
     _player.stream.tracks.listen((value) {
       _subtitleTracks = value.subtitle;
+      _audioTracks = value.audio;
       notifyListeners();
     });
     _player.stream.completed.listen((value) {
@@ -289,6 +305,62 @@ class PlayerService extends ChangeNotifier {
 
   Future<void> disableSubtitles() async {
     await _player.setSubtitleTrack(SubtitleTrack.no());
+    notifyListeners();
+  }
+
+  Future<void> useAudioTrack(AudioTrack track) async {
+    await _player.setAudioTrack(track);
+    notifyListeners();
+  }
+
+  /// Positive shows captions later, negative earlier.
+  Future<void> setSubtitleDelay(double seconds) async {
+    _subtitleDelay = seconds.clamp(-10.0, 10.0);
+    _setMpv('sub-delay', _subtitleDelay.toStringAsFixed(2));
+    notifyListeners();
+  }
+
+  void cycleZoom() {
+    _zoom = switch (_zoom) {
+      'fit' => 'fill',
+      'fill' => 'stretch',
+      'stretch' => 'crop',
+      _ => 'fit',
+    };
+    _setMpv('panscan', _zoom == 'crop' ? '1.0' : '0.0');
+    notifyListeners();
+  }
+
+  /// Software decoding is the fallback for files the phone's decoder chokes on.
+  void toggleDecoder() {
+    _hardwareDecoding = !_hardwareDecoding;
+    _setMpv('hwdec', _hardwareDecoding ? 'auto-safe' : 'no');
+    notifyListeners();
+  }
+
+  /// Opens a direct video link (network stream).
+  Future<void> openUrl(String url) async {
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) return;
+    _queue.clear();
+    _index = 0;
+    _current = VideoItem(
+      path: trimmed,
+      title: trimmed.split('/').last,
+      folder: 'Stream',
+      date: DateTime.now(),
+    );
+    _error = null;
+    notifyListeners();
+    try {
+      await _player.open(Media(trimmed), play: true);
+      await _player.setRate(_speed);
+      await _player.setVolume(_volume);
+      _applyFilters();
+      WakelockPlus.enable();
+    } catch (_) {
+      _error = 'Stream khul nahi paya';
+    }
     notifyListeners();
   }
 

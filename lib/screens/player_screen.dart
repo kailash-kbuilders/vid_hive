@@ -188,7 +188,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   child: Video(
                     controller: player.controller,
                     controls: NoVideoControls,
-                    fit: BoxFit.contain,
+                    fit: player.videoFit,
                   ),
                 );
               },
@@ -445,6 +445,28 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     label: 'Captions',
                     icon: Icons.subtitles_rounded,
                     onTap: () => showSubtitleSheet(context),
+                  ),
+                  _pill(
+                    label: 'Audio',
+                    icon: Icons.audiotrack_rounded,
+                    onTap: () => showAudioSheet(context),
+                  ),
+                  _pill(
+                    label: switch (player.zoom) {
+                      'fill' => 'Fill',
+                      'stretch' => 'Stretch',
+                      'crop' => 'Crop',
+                      _ => 'Fit',
+                    },
+                    icon: Icons.aspect_ratio_rounded,
+                    active: player.zoom != 'fit',
+                    onTap: player.cycleZoom,
+                  ),
+                  _pill(
+                    label: player.hardwareDecoding ? 'HW' : 'SW',
+                    icon: Icons.memory_rounded,
+                    active: !player.hardwareDecoding,
+                    onTap: player.toggleDecoder,
                   ),
                   _pill(
                     label: 'Queue',
