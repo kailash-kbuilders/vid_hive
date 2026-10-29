@@ -1,0 +1,97 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate android folder if missing
+        run: |
+          if [ ! -d "android" ]; then
+            TMP="$(mktemp -d)"
+            flutter create "$TMP/seed" --platforms=android --project-name vid_hive
+            cp -r "$TMP/seed/android" ./android
+            rm -rf "$TMP"
+          fi
+
+      - name: Patch Android project (permissions, PiP)
+        run: python3 tool/patch_android.py
+
+      - name: Configure Android project
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, re
+          repo = os.environ.get("GITHUB_REPOSITORY", "app")
+          app_id = "com.vidhive." + repo.split("/")[-1].replace("-", "_").lower()
+
+          for name in ("android/app/build.gradle", "android/app/build.gradle.kts"):
+              path = pathlib.Path(name)
+              if not path.exists():
+                  continue
+              text = path.read_text()
+              text = re.sub(r'(applicationId[ \t]*=?[ \t]*)"[^"]*"',
+                            lambda m: m.group(1) + '"' + app_id + '"', text)
+              path.write_text(text)
+              print("configured", name, "->", app_id)
+          PY
+
+      - name: Show Android SDK configuration
+        run: |
+          grep -rnE "compileSdk|targetSdk|minSdk|ndkVersion" android/app/build.gradle* || true
+
+      - name: Gradle fixes (R8 rules)
+        run: |
+          cat > android/app/proguard-rules.pro <<'EOF'
+          -dontwarn io.flutter.**
+          -keep class io.flutter.** { *; }
+          -keep class com.alexmercerind.** { *; }
+          -keep class media.kit.** { *; }
+          EOF
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate app icon
+        run: dart run flutter_launcher_icons
+
+      - name: Build release APK
+        run: flutter build apk --release --no-shrink
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Publish APK to GitHub Release
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'apk-latest' }}
+          name: APK build
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          files: build/app/outputs/flutter-apk/app-release.apk
