@@ -14,7 +14,6 @@ dependencies:
   media_kit: ^1.2.0
   media_kit_video: ^1.2.5
   media_kit_libs_video: ^1.0.4
-  photo_manager: ^3.3.0
   permission_handler: ^11.3.1
   screen_brightness: ^2.1.6
   shared_preferences: ^2.3.2

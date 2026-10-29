@@ -1,47 +1,62 @@
-/// One video on the device.
+/// One video file found on the device.
 class VideoItem {
   const VideoItem({
-    required this.id,
+    required this.path,
     required this.title,
-    required this.duration,
-    required this.date,
-    required this.width,
-    required this.height,
     required this.folder,
-    this.path,
+    required this.date,
+    this.duration = Duration.zero,
+    this.width = 0,
+    this.height = 0,
+    this.sizeBytes = 0,
   });
 
-  final String id;
+  final String path;
   final String title;
-  final Duration duration;
+  final String folder;
   final DateTime date;
+  final Duration duration;
   final int width;
   final int height;
-  final String folder;
+  final int sizeBytes;
 
-  /// Filled in when the file path has been resolved.
-  final String? path;
+  String get id => path;
 
-  VideoItem withPath(String value) => VideoItem(
-        id: id,
-        title: title,
-        duration: duration,
-        date: date,
-        width: width,
-        height: height,
+  VideoItem copyWith({
+    String? title,
+    Duration? duration,
+    int? width,
+    int? height,
+    int? sizeBytes,
+  }) =>
+      VideoItem(
+        path: path,
+        title: title ?? this.title,
         folder: folder,
-        path: value,
+        date: date,
+        duration: duration ?? this.duration,
+        width: width ?? this.width,
+        height: height ?? this.height,
+        sizeBytes: sizeBytes ?? this.sizeBytes,
       );
 
   String get resolution {
-    if (width <= 0 || height <= 0) return '—';
-    final short = width < height ? width : height;
-    if (short >= 2000) return '4K';
-    if (short >= 1400) return '1440p';
-    if (short >= 1000) return '1080p';
-    if (short >= 700) return '720p';
-    if (short >= 400) return '480p';
-    return '${width}x$height';
+    if (width > 0 && height > 0) {
+      final short = width < height ? width : height;
+      if (short >= 2000) return '4K';
+      if (short >= 1400) return '1440p';
+      if (short >= 1000) return '1080p';
+      if (short >= 700) return '720p';
+      if (short >= 400) return '480p';
+      return '${width}x$height';
+    }
+    final name = title.toLowerCase();
+    if (name.contains('2160') || name.contains('4k')) return '4K';
+    if (name.contains('1440')) return '1440p';
+    if (name.contains('1080')) return '1080p';
+    if (name.contains('720')) return '720p';
+    if (name.contains('480')) return '480p';
+    return '—';
   }
 
   String get durationLabel {
@@ -58,26 +73,4 @@ class VideoItem {
     final d = date;
     return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
   }
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'duration': duration.inMilliseconds,
-        'date': date.millisecondsSinceEpoch,
-        'width': width,
-        'height': height,
-        'folder': folder,
-        'path': path,
-      };
-
-  factory VideoItem.fromJson(Map<String, dynamic> json) => VideoItem(
-        id: json['id'] as String? ?? '',
-        title: json['title'] as String? ?? 'Video',
-        duration: Duration(milliseconds: (json['duration'] as num?)?.toInt() ?? 0),
-        date: DateTime.fromMillisecondsSinceEpoch((json['date'] as num?)?.toInt() ?? 0),
-        width: (json['width'] as num?)?.toInt() ?? 0,
-        height: (json['height'] as num?)?.toInt() ?? 0,
-        folder: json['folder'] as String? ?? '',
-        path: json['path'] as String?,
-      );
 }

@@ -100,6 +100,61 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
+            if (library.videoCount > 0)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF3B4D1F), Color(0xFF161D0E)],
+                    ),
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(color: AppColors.line),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.sd_storage_rounded, size: 22, color: AppColors.lime),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${library.videoCount} videos',
+                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${formatBytes(library.totalBytes)} · ${library.folders.length} folders',
+                              style: const TextStyle(fontSize: 11, color: AppColors.muted),
+                            ),
+                          ],
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () => library.load(force: true),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                          decoration: BoxDecoration(
+                            color: AppColors.lime,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Text(
+                            'Rescan',
+                            style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF10160A)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             if (library.isLoading)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 40),
@@ -112,21 +167,24 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Video access chahiye',
+                      const Text('All files access chahiye',
                           style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 6),
                       const Text(
-                        'VidHive ko sirf videos padhni hain — camera, location ya contacts nahi.',
+                        'Gallery me saari videos index nahi hoti — isliye VidHive seedha storage padhta hai. Settings me "All files access" on karna padega. Camera, location, contacts — kuch nahi maangta.',
                         style: TextStyle(fontSize: 12, color: AppColors.muted, height: 1.5),
                       ),
                       const SizedBox(height: 12),
                       FilledButton(
-                        onPressed: () => library.load(force: true),
+                        onPressed: () async {
+                          await library.requestPermission();
+                          await library.load(force: true);
+                        },
                         style: FilledButton.styleFrom(
                           backgroundColor: AppColors.lime,
                           foregroundColor: const Color(0xFF10160A),
                         ),
-                        child: const Text('Allow access'),
+                        child: const Text('Access do'),
                       ),
                     ],
                   ),
@@ -214,7 +272,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                             ),
-                            Text('${library.countInFolder(folder)} videos',
+                            Text(
+                                '${library.countInFolder(folder)} · ${formatBytes(library.bytesInFolder(folder))}',
                                 style: const TextStyle(fontSize: 10.5, color: AppColors.muted)),
                           ],
                         ),

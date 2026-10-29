@@ -85,7 +85,8 @@ class FoldersScreen extends StatelessWidget {
                                           style: const TextStyle(
                                               fontSize: 13.5, fontWeight: FontWeight.w500)),
                                       const SizedBox(height: 2),
-                                      Text('$count videos',
+                                      Text(
+                                          '$count videos · ${formatBytes(library.bytesInFolder(folder))}',
                                           style: const TextStyle(
                                               fontSize: 11, color: AppColors.muted)),
                                     ],

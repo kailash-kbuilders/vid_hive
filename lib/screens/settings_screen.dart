@@ -49,6 +49,16 @@ class SettingsScreen extends StatelessWidget {
               onTap: () => library.load(force: true),
             ),
             const SizedBox(height: 18),
+            _Tile(
+              icon: Icons.folder_shared_rounded,
+              title: 'All files access',
+              subtitle: 'Storage se seedha videos padhne ke liye',
+              onTap: () async {
+                await library.requestPermission();
+                await library.load(force: true);
+              },
+            ),
+            const SizedBox(height: 18),
             const _GroupLabel('About'),
             _Tile(
               icon: Icons.lock_outline_rounded,
@@ -57,7 +67,7 @@ class SettingsScreen extends StatelessWidget {
               onTap: () => _dialog(
                 context,
                 'Permissions',
-                'VidHive sirf videos padhne ki permission maangta hai (READ_MEDIA_VIDEO). Camera, microphone, location, contacts — kuch nahi.\n\nDelete karte waqt Android khud confirm karta hai.',
+                'VidHive "All files access" maangta hai taaki gallery index pe depend na kare — jo videos gallery me nahi dikhti wo bhi mil jayein. Camera, microphone, location, contacts — kuch nahi.\n\nDelete karte waqt Android khud confirm karta hai.',
               ),
             ),
             _Tile(

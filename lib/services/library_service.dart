@@ -1,45 +1,66 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
-import 'package:photo_manager/photo_manager.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../models/video_item.dart';
+import 'media_probe.dart';
 
 enum VideoSort { newest, oldest, name, duration }
 
-/// Scans the device for videos through MediaStore (photo_manager), keeps the
-/// folder structure, and can delete files the way a file manager does.
+/// Scans the phone's storage directly for video files (All files access), so
+/// nothing depends on the gallery having indexed them.
 class LibraryService extends ChangeNotifier {
+  static const Set<String> videoExtensions = {
+    'mp4', 'mkv', 'avi', 'mov', 'm4v', 'webm', 'flv', 'wmv', '3gp', '3g2',
+    'ts', 'm2ts', 'mts', 'mpg', 'mpeg', 'rmvb', 'rm', 'ogv', 'divx', 'asf',
+    'vob', 'f4v', 'dat', 'm2v', 'mxf',
+  };
+
+  static const List<String> _skipParts = [
+    '/Android/data',
+    '/Android/obb',
+    '/Android/media',
+    '/.thumbnails',
+    '/.trashed',
+    '/LOST.DIR',
+    '/.cache',
+  ];
+
   final List<VideoItem> _videos = [];
-  final List<AssetPathEntity> _paths = [];
-  final Map<String, String> _pathCache = {};
-  final Map<String, AssetEntity> _assets = {};
+  final Map<String, Uint8List?> _thumbCache = {};
 
   bool _loading = false;
   bool _loadedOnce = false;
   bool _permissionDenied = false;
+  bool _probeRunning = false;
   String? _error;
   VideoSort _sort = VideoSort.newest;
   String _query = '';
+  int _scannedFiles = 0;
 
   List<VideoItem> get videos => _sorted(_filtered());
   List<VideoItem> get all => List.unmodifiable(_videos);
   bool get isLoading => _loading;
   bool get permissionDenied => _permissionDenied;
   bool get loadedOnce => _loadedOnce;
+  bool get isProbing => _probeRunning;
   String? get error => _error;
   VideoSort get sort => _sort;
   String get query => _query;
-
+  int get scannedFiles => _scannedFiles;
   int get videoCount => _videos.length;
+
+  int get totalBytes => _videos.fold(0, (sum, video) => sum + video.sizeBytes);
 
   List<String> get folders {
     final names = <String>{};
     for (final video in _videos) {
       if (video.folder.isNotEmpty) names.add(video.folder);
     }
-    final list = names.toList()..sort();
-    return list;
+    return names.toList()..sort();
   }
 
   List<VideoItem> byFolder(String folder) =>
@@ -47,6 +68,10 @@ class LibraryService extends ChangeNotifier {
 
   int countInFolder(String folder) =>
       _videos.where((video) => video.folder == folder).length;
+
+  int bytesInFolder(String folder) => _videos
+      .where((video) => video.folder == folder)
+      .fold(0, (sum, video) => sum + video.sizeBytes);
 
   void setSort(VideoSort value) {
     _sort = value;
@@ -87,6 +112,28 @@ class LibraryService extends ChangeNotifier {
     return copy;
   }
 
+  /// Asks for "All files access" (Android 11+) or storage permission.
+  Future<bool> requestPermission() async {
+    try {
+      if (Platform.isAndroid) {
+        final manage = await Permission.manageExternalStorage.status;
+        if (manage.isGranted) return true;
+        final requested = await Permission.manageExternalStorage.request();
+        if (requested.isGranted) return true;
+        if (requested.isPermanentlyDenied) {
+          await openAppSettings();
+          return false;
+        }
+        final storage = await Permission.storage.request();
+        return storage.isGranted;
+      }
+      final storage = await Permission.storage.request();
+      return storage.isGranted;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> load({bool force = false}) async {
     if (_loading) return;
     if (_loadedOnce && !force) return;
@@ -94,8 +141,8 @@ class LibraryService extends ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
-      final permission = await PhotoManager.requestPermissionExtend();
-      if (!permission.isAuth && !permission.hasAccess) {
+      final granted = await requestPermission();
+      if (!granted) {
         _permissionDenied = true;
         _loading = false;
         _loadedOnce = true;
@@ -103,129 +150,158 @@ class LibraryService extends ChangeNotifier {
         return;
       }
       _permissionDenied = false;
-
-      final filter = FilterOptionGroup(
-        orders: [
-          const OrderOption(type: OrderOptionType.createDate, asc: false),
-        ],
-      );
-      final paths = await PhotoManager.getAssetPathList(
-        type: RequestType.video,
-        onlyAll: false,
-        filterOption: filter,
-      );
-      _paths
-        ..clear()
-        ..addAll(paths);
-
-      final collected = <VideoItem>[];
-      for (final path in paths) {
-        final total = await path.assetCountAsync;
-        if (total == 0) continue;
-        var page = 0;
-        while (page * 200 < total && page < 10) {
-          final assets = await path.getAssetListPaged(page: page, size: 200);
-          if (assets.isEmpty) break;
-          for (final asset in assets) {
-            final item = _toVideo(asset, path.name);
-            if (item == null) continue;
-            _assets[item.id] = asset;
-            collected.add(item);
-          }
-          page++;
-        }
-      }
-
-      // The same file can appear in "All" and in its folder — keep one copy.
-      final seen = <String>{};
-      _videos.clear();
-      for (final item in collected) {
-        if (seen.add(item.id)) _videos.add(item);
-      }
+      await _scan();
     } catch (e) {
-      _error = 'Videos read nahi ho paye';
-      if (kDebugMode) debugPrint('library scan failed: $e');
+      _error = 'Storage read nahi hui';
+      if (kDebugMode) debugPrint('scan failed: $e');
     } finally {
       _loading = false;
       _loadedOnce = true;
       notifyListeners();
     }
+    unawaited(_probeMissing());
   }
 
-  VideoItem? _toVideo(AssetEntity asset, String folder) {
-    final title = (asset.title ?? '').trim();
-    final name = title.isEmpty ? 'Video ${asset.id.substring(0, 4)}' : title;
-    return VideoItem(
-      id: asset.id,
-      title: name,
-      duration: Duration(seconds: asset.duration),
-      date: asset.createDateTime,
-      width: asset.width,
-      height: asset.height,
-      folder: folder,
-      path: _pathCache[asset.id],
-    );
+  Future<void> _scan() async {
+    final found = <VideoItem>[];
+    _scannedFiles = 0;
+    for (final root in await _roots()) {
+      await _walk(Directory(root), found, depth: 0);
+    }
+    found.sort((a, b) => b.date.compareTo(a.date));
+    _videos
+      ..clear()
+      ..addAll(found);
+    _thumbCache.clear();
   }
 
-  /// Resolves the real file path (and remembers it).
-  Future<String?> pathOf(VideoItem video) async {
-    final cached = _pathCache[video.id] ?? video.path;
-    if (cached != null && cached.isNotEmpty) return cached;
+  Future<List<String>> _roots() async {
+    final roots = <String>[];
+    const primary = '/storage/emulated/0';
+    if (await Directory(primary).exists()) roots.add(primary);
     try {
-      final asset = _assets[video.id] ??
-          (await AssetEntity.fromId(video.id));
-      if (asset == null) return null;
-      final file = await asset.file;
-      final path = file?.path;
-      if (path != null) _pathCache[video.id] = path;
-      return path;
+      await for (final entity in Directory('/storage').list(followLinks: false)) {
+        if (entity is! Directory) continue;
+        final path = entity.path;
+        if (path.contains('emulated') || path.contains('/self')) continue;
+        roots.add(path);
+      }
     } catch (_) {
-      return null;
+      // Only the primary volume is readable.
+    }
+    return roots;
+  }
+
+  Future<void> _walk(Directory directory, List<VideoItem> out, {required int depth}) async {
+    if (depth > 12 || out.length > 4000) return;
+    List<FileSystemEntity> entries;
+    try {
+      entries = await directory.list(followLinks: false).toList();
+    } catch (_) {
+      return;
+    }
+    for (final entity in entries) {
+      final path = entity.path;
+      if (_skipParts.any(path.contains)) continue;
+      if (entity is Directory) {
+        await _walk(entity, out, depth: depth + 1);
+        continue;
+      }
+      if (entity is! File) continue;
+      final name = path.split('/').last;
+      final dot = name.lastIndexOf('.');
+      if (dot <= 0) continue;
+      final extension = name.substring(dot + 1).toLowerCase();
+      if (!videoExtensions.contains(extension)) continue;
+      _scannedFiles++;
+      try {
+        final stat = await entity.stat();
+        if (stat.size < 200 * 1024) continue;
+        out.add(VideoItem(
+          path: path,
+          title: name.substring(0, dot),
+          folder: _folderOf(path),
+          date: stat.modified,
+          sizeBytes: stat.size,
+        ));
+      } catch (_) {
+        continue;
+      }
     }
   }
 
-  Future<Uint8List?> thumbnail(VideoItem video, {int size = 320}) async {
-    try {
-      final asset = _assets[video.id] ?? (await AssetEntity.fromId(video.id));
-      if (asset == null) return null;
-      return asset.thumbnailDataWithSize(ThumbnailSize(size, (size * 9) ~/ 16));
-    } catch (_) {
-      return null;
-    }
+  String _folderOf(String path) {
+    final parts = path.split('/');
+    if (parts.length < 2) return '';
+    return parts[parts.length - 2];
   }
 
-  /// Deletes the file from the device (Android shows a system confirm dialog).
-  Future<bool> delete(List<VideoItem> items) async {
-    final ids = items.map((item) => item.id).toList();
+  /// Reads duration and resolution for videos that do not have them yet.
+  Future<void> _probeMissing() async {
+    if (_probeRunning) return;
+    _probeRunning = true;
     try {
-      final result = await PhotoManager.editor.deleteWithIds(ids);
-      if (result.isEmpty) return false;
-      final removed = result.toSet();
-      _videos.removeWhere((video) => removed.contains(video.id));
+      final pending = _videos.where((video) => video.duration == Duration.zero).take(60).toList();
+      for (final video in pending) {
+        final meta = await MediaProbe.meta(video.path);
+        if (meta == null) continue;
+        final index = _videos.indexWhere((item) => item.path == video.path);
+        if (index < 0) continue;
+        _videos[index] = _videos[index].copyWith(
+          duration: meta.duration,
+          width: meta.width,
+          height: meta.height,
+        );
+        notifyListeners();
+      }
+    } finally {
+      _probeRunning = false;
       notifyListeners();
-      return true;
-    } catch (_) {
-      return false;
     }
+  }
+
+  /// Duration discovered during playback is remembered for the list.
+  void rememberMeta(String path, {Duration? duration, int? width, int? height}) {
+    final index = _videos.indexWhere((video) => video.path == path);
+    if (index < 0) return;
+    _videos[index] = _videos[index].copyWith(duration: duration, width: width, height: height);
+    notifyListeners();
+  }
+
+  Future<Uint8List?> thumbnail(VideoItem video, {int width = 360}) async {
+    if (_thumbCache.containsKey(video.path)) return _thumbCache[video.path];
+    final bytes = await MediaProbe.thumbnail(video.path, width: width);
+    _thumbCache[video.path] = bytes;
+    return bytes;
+  }
+
+  Future<bool> delete(List<VideoItem> items) async {
+    var deleted = false;
+    for (final video in items) {
+      try {
+        final file = File(video.path);
+        if (await file.exists()) await file.delete();
+        _videos.removeWhere((item) => item.path == video.path);
+        _thumbCache.remove(video.path);
+        deleted = true;
+      } catch (_) {
+        // Some files are read-only; skip them.
+      }
+    }
+    notifyListeners();
+    return deleted;
   }
 
   Future<int> sizeOf(VideoItem video) async {
-    final path = await pathOf(video);
-    if (path == null) return 0;
+    if (video.sizeBytes > 0) return video.sizeBytes;
     try {
-      return await File(path).length();
+      return await File(video.path).length();
     } catch (_) {
       return 0;
     }
   }
 
-  Future<int> folderSize(String folder) async {
-    var total = 0;
-    for (final video in byFolder(folder).take(60)) {
-      total += await sizeOf(video);
-    }
-    return total;
-  }
+  String? pathOf(VideoItem video) => video.path;
 }
 
 String formatBytes(int bytes) {

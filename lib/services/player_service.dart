@@ -91,6 +91,10 @@ class PlayerService extends ChangeNotifier {
     });
     _player.stream.duration.listen((value) {
       _duration = value;
+      final video = _current;
+      if (video != null && value > Duration.zero && video.duration != value) {
+        _library.rememberMeta(video.path, duration: value);
+      }
       notifyListeners();
     });
     _player.stream.tracks.listen((value) {
@@ -134,7 +138,7 @@ class PlayerService extends ChangeNotifier {
     _duration = video.duration;
     notifyListeners();
 
-    final path = await _library.pathOf(video);
+    final path = _library.pathOf(video);
     if (path == null) {
       _error = 'Ye video khol nahi paya';
       notifyListeners();
