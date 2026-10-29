@@ -153,7 +153,7 @@ class LibraryService extends ChangeNotifier {
   }
 
   VideoItem? _toVideo(AssetEntity asset, String folder) {
-    final title = asset.title.trim();
+    final title = (asset.title ?? '').trim();
     final name = title.isEmpty ? 'Video ${asset.id.substring(0, 4)}' : title;
     return VideoItem(
       id: asset.id,
